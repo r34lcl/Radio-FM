@@ -1,0 +1,28 @@
+Radio FM
+Copyright 2026 KqK.cl
+
+Proyecto original: https://github.com/r34lcl/Radio-FM
+Sitio: https://kqk.cl
+
+Este producto se distribuye bajo la Licencia Apache 2.0 (ver LICENSE).
+Toda copia o trabajo derivado debe conservar este aviso, indicando que
+se basa en Radio FM de KqK.cl.
+
+Software de terceros
+--------------------
+Este repositorio no incluye código de terceros. Las imágenes Docker que se
+construyen con él descargan e instalan estos programas, cada uno con su
+propia licencia:
+
+- airspy-fmradion (GPL-3.0) - https://github.com/jj1bdx/airspy-fmradion
+  Se descarga y compila desde su repositorio al construir la imagen.
+- rtl-sdr / librtlsdr (GPL-2.0) - https://osmocom.org/projects/rtl-sdr
+- Icecast (GPL-2.0) - https://icecast.org
+- FFmpeg (LGPL-2.1 / GPL-2.0, según la compilación de Debian) - https://ffmpeg.org
+- NumPy (BSD-3-Clause) - https://numpy.org
+- ShazamIO (MIT) - https://github.com/shazamio/ShazamIO
+- Debian y Python (imágenes base)
+
+Si distribuyes una imagen Docker ya construida, también distribuyes esos
+programas y debes cumplir sus licencias (en particular, ofrecer el código
+fuente de los componentes GPL).

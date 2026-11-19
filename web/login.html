@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio FM · Ingresar</title>
+<script src="/i18n.js"></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<style>
+  :root { --bg: #111418; --panel: #1b2027; --line: #2c333d; --text: #e8ecf1; --muted: #8b95a3; --accent: #f2a33a; --bad: #e5664d; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-rows: 1fr auto; place-items: center; padding: 16px;
+  }
+  .box { width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 12px;
+  }
+  form { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 13px; }
+  input { font: inherit; color: var(--text); background: #232a33; border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { font: inherit; font-weight: 600; background: var(--accent); color: #111; border: 0; border-radius: 9px; padding: 11px; cursor: pointer; }
+  .err { color: var(--bad); font-size: 13px; min-height: 1em; margin: 0; }
+  .err:empty { display: none; }
+  .cf-turnstile { min-height: 65px; }
+  .back { color: var(--muted); font-size: 13px; text-align: center; text-decoration: none; }
+  footer.site { padding: 24px 16px 4px; text-align: center; font-size: 12.5px; color: var(--muted); }
+  footer.site a { color: inherit; text-decoration: none; font-weight: 600; }
+  footer.site a:hover { color: var(--text); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="box">
+<form method="post" action="/login">
+  <h1 data-t>📻 Radio FM · Admin</h1>
+  <p class="err" data-t>{{ERROR}}</p>
+  <label><span data-t>Usuario</span> <input name="username" autocomplete="username" required autofocus></label>
+  <label><span data-t>Contraseña</span> <input name="password" type="password" autocomplete="current-password" required></label>
+  {{TURNSTILE}}
+  <button type="submit" data-t>Ingresar</button>
+  <a class="back" href="/" data-t>← Volver a la radio</a>
+</form>
+</div>
+<footer class="site">Radio FM v__VERSION__ · <a href="https://kqk.cl" target="_blank" rel="noopener">KqK.cl</a></footer>
+<script>tStatic();</script>
+</body>
+</html>

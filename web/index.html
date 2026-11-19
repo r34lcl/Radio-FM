@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio FM · Admin</title>
+<script src="/i18n.js"></script>
+<style>
+  :root {
+    --bg: #111418; --panel: #1b2027; --line: #2c333d; --text: #e8ecf1; --muted: #8b95a3;
+    --accent: #f2a33a; --ok: #4cc38a; --warn: #e5c547; --bad: #e5664d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 16px 16px 16px;
+  }
+  main { width: 100%; max-width: 560px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
+  /* Celular: oyentes justo después del sintonizador. Pantalla ancha: columna derecha fija. */
+  main > .appbar { grid-column: 1 / -1; order: 0; }
+  @media (max-width: 1199px) {
+    main > section { order: 4; }
+    main > .dial { order: 1; } main > .tunepanel { order: 2; } main > .logpanel { order: 3; }
+  }
+  @media (min-width: 1200px) {
+    main { max-width: 1240px; grid-template-columns: 560px minmax(0, 1fr); }
+    main > section { grid-column: 1; }
+    main > .logpanel {
+      grid-column: 2; grid-row: 2 / span 4; align-self: start;
+      position: sticky; top: 16px; max-height: calc(100vh - 32px); display: flex; flex-direction: column;
+    }
+    .logpanel .log-wrap { min-height: 0; overflow: auto; }
+  }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+
+  .dial { text-align: center; }
+  .station-name { font-size: 22px; font-weight: 650; margin-bottom: 6px; overflow-wrap: anywhere; }
+  .station-name:empty { display: none; }
+  .freq { font: 600 64px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: -1px; }
+  .freq small { font-size: 22px; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+  .now { margin-top: 10px; color: var(--accent); font-size: 14px; overflow-wrap: anywhere; }
+  .now:empty { display: none; }
+  .status { margin-top: 10px; color: var(--muted); display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.busy { background: var(--warn); animation: blink 1s infinite; }
+  .dot.off { background: var(--bad); }
+  @keyframes blink { 50% { opacity: .3; } }
+  .badge { border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-size: 12px; }
+
+  .player { display: flex; align-items: center; gap: 16px; margin-top: 20px; }
+  .play {
+    width: 64px; height: 64px; flex: none; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--accent); color: #111; display: grid; place-items: center;
+  }
+  .play svg { width: 26px; height: 26px; }
+  .vol { flex: 1; display: flex; align-items: center; gap: 10px; color: var(--muted); }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+
+  .tune { display: flex; gap: 8px; align-items: stretch; }
+  button, input[type=number], input[type=text] {
+    font: inherit; color: var(--text); background: #232a33; border: 1px solid var(--line);
+    border-radius: 9px; padding: 10px 12px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  input[type=number] { width: 100%; min-width: 0; text-align: center; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .tune .go { background: var(--accent); color: #111; border: 0; font-weight: 600; white-space: nowrap; }
+  .mode { display: flex; margin-top: 12px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .mode button { flex: 1; border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+  .mode button.sel { background: #2e3742; color: var(--text); }
+  .rename { display: flex; gap: 8px; margin-top: 12px; }
+  .rename input { flex: 1; min-width: 0; }
+  .rename button { white-space: nowrap; }
+  .err { color: var(--bad); min-height: 1.4em; margin-top: 8px; font-size: 13px; }
+  .ok { color: var(--ok); }
+
+  h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+  .presets.named { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-bottom: 18px; }
+  .presets:empty { display: none; }
+  .preset { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 9px 10px; text-align: left; }
+  .preset .row { display: flex; justify-content: space-between; align-items: center; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .preset .pname { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preset.sel .pname { color: var(--accent); }
+  .preset.sel { border-color: var(--accent); color: var(--accent); }
+  .bars { display: flex; gap: 2px; align-items: flex-end; height: 12px; }
+  .bars i { width: 3px; background: var(--line); border-radius: 1px; }
+  .bars i:nth-child(1) { height: 4px; } .bars i:nth-child(2) { height: 8px; } .bars i:nth-child(3) { height: 12px; }
+  .q3 i { background: var(--ok); } .q2 i:nth-child(-n+2) { background: var(--warn); } .q1 i:nth-child(1) { background: var(--bad); }
+  .legend { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .multi .hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 7px 11px; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+  .chip b { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
+  .chip span { color: var(--muted); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip.sel { border-color: var(--accent); color: var(--accent); background: #2e2a22; }
+  .chip:disabled { opacity: .35; cursor: not-allowed; }
+  .chip:disabled:hover { border-color: var(--line); }
+  .onair { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .onair:empty { display: none; }
+  .onair div { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .onair b { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; min-width: 44px; }
+  .onair .song { color: var(--accent); overflow-wrap: anywhere; }
+  .onair .muted { color: var(--muted); }
+  .log-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .log-head h2 { margin: 0; }
+  .log-sum { font-size: 13px; color: var(--muted); flex: 1; }
+  .log-sum b { color: var(--ok); font-weight: 600; }
+  .log-filter { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .log-wrap { overflow-x: auto; }
+  table.log { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+  .log th { position: sticky; top: 0; background: var(--panel); text-align: left; font-weight: 600; color: var(--muted); padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); }
+  .log td { padding: 7px 8px 7px 0; border-bottom: 1px solid #232a33; }
+  .log th:first-child, .log td:first-child { width: 18px; }
+  .log th:last-child, .log td:last-child { padding-right: 0; text-align: right; }
+  .log td.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .log tr.on td { color: var(--text); }
+  .log tr.off td { color: var(--muted); }
+  .log .tag { font-size: 11px; border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; margin-left: 6px; color: var(--muted); }
+  .log a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
+  .log-empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  /* Barra superior: idioma a la izquierda (alineado con las cajas), pestañas a la derecha */
+  .appbar { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 4px; margin-left: auto; }
+  .tabs a, .logout button {
+    color: var(--muted); font: inherit; font-size: 13px; text-decoration: none; background: none;
+    border: 1px solid transparent; border-radius: 8px; padding: 6px 11px; cursor: pointer; white-space: nowrap;
+    transition: color .15s, background-color .15s;
+  }
+  .tabs a:hover, .logout button:hover { color: var(--text); background: var(--panel); }
+  .tabs a.sel { color: var(--text); background: var(--panel); border-color: var(--line); }
+  .tabs a:focus-visible, .logout button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .logout { margin: 0; }
+  @media (max-width: 640px) {
+    .logout { order: 2; margin-left: auto; }
+    .tabs { order: 3; width: 100%; margin: 0; }
+    .tabs a { flex: 1; text-align: center; padding: 8px 6px; }
+  }
+  footer.site { margin-top: auto; padding: 24px 16px 4px; text-align: center; font-size: 12.5px; color: var(--muted); }
+  footer.site a { color: inherit; text-decoration: none; font-weight: 600; }
+  footer.site a:hover { color: var(--text); text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <header class="appbar">
+    <div data-lang-picker></div>
+    <nav class="tabs" aria-label="Secciones">
+      <a href="/" data-t>Página pública</a><a href="/admin" class="sel" aria-current="page" data-t>Sintonizador</a><a href="/admin/config" data-t>Configuración</a>
+    </nav>
+    <form method="post" action="/logout" class="logout"><button type="submit" data-t>Salir</button></form>
+  </header>
+
+  <section class="panel dial">
+    <div class="station-name" id="station-name"></div>
+    <div class="freq"><span id="freq">--.-</span><small>MHz</small></div>
+    <div class="status">
+      <span class="dot" id="dot"></span><span id="state" data-t>Conectando…</span>
+      <span class="badge" id="mode-badge" hidden></span>
+      <span class="badge" id="listeners" hidden></span>
+    </div>
+    <div class="now" id="now"></div>
+    <div class="player">
+      <button class="play" id="play" aria-label="Reproducir"></button>
+      <label class="vol">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
+        <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8" aria-label="Volumen">
+      </label>
+    </div>
+    <audio id="audio" preload="none"></audio>
+  </section>
+
+  <section class="panel tunepanel">
+    <div class="tune">
+      <button id="down" aria-label="Bajar 0,1 MHz">−0.1</button>
+      <input type="number" id="freq-input" min="87.5" max="108" step="0.1" inputmode="decimal" aria-label="Frecuencia en MHz">
+      <button id="up" aria-label="Subir 0,1 MHz">+0.1</button>
+      <button class="go" id="go" data-t>Sintonizar</button>
+    </div>
+    <div class="mode">
+      <button id="stereo" data-t>Estéreo</button>
+      <button id="mono" data-t>Mono</button>
+    </div>
+    <div class="rename">
+      <input type="text" id="name-input" maxlength="40" autocomplete="off" aria-label="Nombre de la emisora">
+      <button id="save-name" data-t>Guardar nombre</button>
+    </div>
+    <div class="err" id="err"></div>
+  </section>
+
+  <section class="panel multi">
+    <h2 data-t>Multi-emisora</h2>
+    <p class="hint" data-t>Transmite otras emisoras al mismo tiempo que la principal. Tienen que estar a 2 MHz o menos
+      entre todas, porque el dongle capta un solo bloque del espectro.</p>
+    <div class="chips" id="chips"></div>
+    <div class="onair" id="onair"></div>
+  </section>
+
+  <section class="panel">
+    <h2 id="named-title" hidden data-t>Mis emisoras</h2>
+    <div class="presets named" id="named"></div>
+    <h2 data-t>Emisoras detectadas</h2>
+    <div class="presets" id="presets"></div>
+    <div class="legend" data-t>Barras = calidad de señal medida en el último escaneo (se repite en Configuración). Con 1 barra conviene usar mono.</div>
+  </section>
+
+  <section class="panel logpanel">
+    <div class="log-head">
+      <h2 data-t>Oyentes</h2>
+      <span class="log-sum" id="log-sum"></span>
+      <label class="log-filter"><input type="checkbox" id="log-online"> <span data-t>Solo en línea</span></label>
+    </div>
+    <div class="log-wrap">
+      <table class="log">
+        <thead><tr><th></th><th data-t>Inicio</th><th data-t>Duración</th><th>IP</th><th data-t>Emisora</th><th data-t>Dispositivo</th><th data-t>Datos</th></tr></thead>
+        <tbody id="log-rows"></tbody>
+      </table>
+    </div>
+    <div class="log-empty" id="log-empty" hidden data-t>Todavía no hay conexiones registradas.</div>
+  </section>
+
+</main>
+<footer class="site">Radio FM v__VERSION__ · <a href="https://kqk.cl" target="_blank" rel="noopener">KqK.cl</a></footer>
+
+<script>
+const $ = id => document.getElementById(id);
+tStatic();
+const audio = $("audio");
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>';
+
+let current = null;        // último /api/status
+let wantPlay = false;      // el usuario quiere escuchar
+let tuning = null;         // {freq, stereo, since, prevStart} mientras se re-sintoniza
+let retryTimer = null;
+
+let stations = [];         // [{freq, snr, name}] desde /api/stations
+
+audio.volume = 0.5;
+if (audio.volume !== 0.5) {
+  // iOS: el volumen solo se controla con los botones del dispositivo
+  $("volume").closest(".vol").remove();
+} else {
+  audio.volume = +($("volume").value = localStorage.getItem("vol") ?? 0.8);
+  $("volume").oninput = e => { audio.volume = e.target.value; localStorage.setItem("vol", e.target.value); };
+}
+
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const nameOf = f => (stations.find(s => s.freq === f) || {}).name || "";
+
+function setPlayIcon() {
+  $("play").innerHTML = wantPlay ? ICON_STOP : ICON_PLAY;
+  $("play").setAttribute("aria-label", _t(wantPlay ? "Detener" : "Reproducir"));
+}
+
+function startAudio() {
+  clearTimeout(retryTimer);
+  audio.src = "/stream?t=" + Date.now();
+  audio.play().catch(() => {});
+}
+
+function stopAudio() {
+  clearTimeout(retryTimer);
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+}
+
+$("play").onclick = () => {
+  wantPlay = !wantPlay;
+  wantPlay ? startAudio() : stopAudio();
+  setPlayIcon();
+};
+
+// Si el stream se corta (re-sintonía, reinicio), reconectar mientras el usuario quiera escuchar.
+for (const ev of ["error", "ended"]) {
+  audio.addEventListener(ev, () => {
+    if (wantPlay && !tuning) { clearTimeout(retryTimer); retryTimer = setTimeout(startAudio, 2000); }
+  });
+}
+
+function render() {
+  const s = current;
+  if (!s) return;
+  const shownFreq = tuning ? tuning.freq : s.freq;
+  const stereo = tuning ? tuning.stereo : s.stereo;
+  $("freq").textContent = shownFreq;
+  $("station-name").textContent = nameOf(shownFreq);
+  $("now").textContent = !tuning && s.song ? `♪ ${s.song.artist} – ${s.song.title}` : "";
+  if (document.activeElement !== $("freq-input")) $("freq-input").value = shownFreq;
+  $("name-input").placeholder = _t("Nombre para {f} MHz", { f: shownFreq });
+  if (document.activeElement !== $("name-input") && $("name-input").dataset.freq !== shownFreq) {
+    $("name-input").value = nameOf(shownFreq);
+    $("name-input").dataset.freq = shownFreq;
+  }
+
+  const dot = $("dot");
+  if (s.scanning) { dot.className = "dot busy"; $("state").textContent = _t("Escaneando la banda…"); }
+  else if (tuning) { dot.className = "dot busy"; $("state").textContent = _t("Sintonizando…"); }
+  else if (s.on_air) { dot.className = "dot on"; $("state").textContent = _t("En vivo"); }
+  else { dot.className = "dot off"; $("state").textContent = _t("Sin señal"); }
+
+  $("mode-badge").hidden = false;
+  $("mode-badge").textContent = _t(stereo ? "Estéreo" : "Mono");
+  $("listeners").hidden = !s.on_air || tuning;
+  $("listeners").textContent = _plural(s.listeners, "{n} oyente", "{n} oyentes");
+
+  renderMulti();
+  $("stereo").classList.toggle("sel", stereo);
+  $("mono").classList.toggle("sel", !stereo);
+  document.querySelectorAll(".preset").forEach(b => b.classList.toggle("sel", b.dataset.freq === shownFreq));
+}
+
+const planKey = st => st ? st.stations.map(x => x.freq).join(" ") : "";
+const fitsBlock = list => Math.max(...list) - Math.min(...list) <= 2 * current.half_span + 1e-6;
+
+function renderMulti() {
+  const s = current;
+  if (!s || !s.stations) return;
+  const principal = tuning ? tuning.freq : s.freq;
+  const active = tuning && tuning.extras ? tuning.extras : s.stations.slice(1).map(x => x.freq);
+  // Candidatas: emisoras conocidas (con nombre o detectadas) a ≤ 2 MHz de la principal
+  const cands = stations.filter(x => x.freq !== principal && (x.name || x.snr != null) &&
+                                     Math.abs(x.freq - principal) <= 2 * s.half_span + 1e-6);
+  const html = cands.map(x => {
+    const sel = active.includes(x.freq);
+    const ok = sel || (active.length + 1 < s.max_stations && fitsBlock([principal, ...active, x.freq].map(Number)));
+    return `<button class="chip${sel ? " sel" : ""}" data-freq="${x.freq}"${ok ? "" : " disabled"}` +
+           ` title="${ok ? "" : _t("No cabe en el bloque junto con las ya elegidas")}">` +
+           `<b>${x.freq}</b>${x.name ? `<span>${esc(x.name)}</span>` : ""}</button>`;
+  }).join("");
+  if ($("chips").dataset.html !== html) {
+    $("chips").innerHTML = html || `<span class="hint">${_t("No hay emisoras conocidas cerca de la principal.")}</span>`;
+    $("chips").dataset.html = html;
+    $("chips").querySelectorAll(".chip").forEach(b => b.onclick = () => {
+      const f = b.dataset.freq;
+      const next = active.includes(f) ? active.filter(x => x !== f) : [...active, f];
+      tune({ extras: next });
+    });
+  }
+  const rows = tuning ? [] : s.stations.slice(1).map(x =>
+    `<div><span class="dot ${x.on_air ? "on" : "off"}"></span><b>${x.freq}</b>` +
+    `<span>${esc(x.name || "")}</span>` +
+    `<span class="muted">${_plural(x.listeners, "{n} oyente", "{n} oyentes")}</span>` +
+    (x.song ? `<span class="song">♪ ${esc(x.song.artist)} – ${esc(x.song.title)}</span>` : "") + `</div>`);
+  $("onair").innerHTML = rows.length
+    ? rows.join("") + `<div class="muted">${_t("Centro del bloque: {f} MHz", { f: s.center.toFixed(2) })}</div>` : "";
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/status", { cache: "no-store" });
+    if (r.status === 401) { location.href = "/login"; return; }
+    current = await r.json();
+    if (tuning) {
+      const done = current.on_air && current.freq === tuning.freq && current.stream_start !== tuning.prevStart &&
+                   current.stations.every(x => x.on_air);
+      if (done) {
+        tuning = null;
+        if (wantPlay) startAudio();
+      } else if (Date.now() - tuning.since > 25000) {
+        tuning = null;
+        $("err").textContent = _t("La emisora no volvió al aire. Revisa los logs del contenedor tuner.");
+      }
+    }
+  } catch { /* servidor web reiniciando */ }
+  render();
+}
+
+async function tune(params) {
+  $("err").textContent = "";
+  const r = await fetch("/api/tune", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params),
+  });
+  if (r.status === 401) { location.href = "/login"; return; }
+  const data = await r.json();
+  if (!r.ok) { $("err").textContent = _tm(data.error); return; }
+  const changed = !current || data.freq !== current.freq || data.stereo !== current.stereo ||
+                  planKey(data) !== planKey(current);
+  if (changed) {
+    tuning = { freq: data.freq, stereo: data.stereo, extras: data.stations.slice(1).map(x => x.freq),
+               since: Date.now(), prevStart: current && current.stream_start };
+    if (wantPlay) { clearTimeout(retryTimer); audio.pause(); }
+  }
+  current = { ...current, ...data, on_air: current ? current.on_air : false };
+  render();
+}
+
+// Los botones ±0.1 esperan un momento antes de enviar, para poder pulsar varias veces seguidas.
+let stepTimer = null;
+function step(delta) {
+  const base = parseFloat($("freq-input").value) || 98.0;
+  const f = Math.min(108, Math.max(87.5, Math.round((base + delta) * 10) / 10)).toFixed(1);
+  $("freq-input").value = f;
+  $("freq").textContent = f;
+  clearTimeout(stepTimer);
+  stepTimer = setTimeout(() => tune({ freq: f }), 800);
+}
+$("down").onclick = () => step(-0.1);
+$("up").onclick = () => step(0.1);
+$("go").onclick = () => tune({ freq: $("freq-input").value });
+$("freq-input").onkeydown = e => { if (e.key === "Enter") { $("freq-input").blur(); tune({ freq: $("freq-input").value }); } };
+$("stereo").onclick = () => tune({ stereo: true });
+$("mono").onclick = () => tune({ stereo: false });
+
+function renderStations() {
+  const btn = s => {
+    const q = s.snr == null ? 0 : s.snr >= 30 ? 3 : s.snr >= 24 ? 2 : 1;
+    const title = s.snr == null ? _t("Sin medición de señal") : `SNR ${s.snr} dB`;
+    return `<button class="preset" data-freq="${s.freq}" title="${title}">` +
+           `<span class="row">${s.freq}<span class="bars q${q}"><i></i><i></i><i></i></span></span>` +
+           (s.name ? `<span class="pname">${esc(s.name)}</span>` : "") + `</button>`;
+  };
+  const named = stations.filter(s => s.name);
+  $("named").innerHTML = named.map(btn).join("");
+  $("named-title").hidden = !named.length;
+  $("presets").innerHTML = stations.filter(s => !s.name && s.snr != null).map(btn).join("");
+  document.querySelectorAll(".preset").forEach(b => b.onclick = () => tune({ freq: b.dataset.freq }));
+  $("name-input").dataset.freq = "";   // refrescar el campo con el nombre guardado
+  render();
+}
+
+async function saveName() {
+  const freq = tuning ? tuning.freq : current && current.freq;
+  if (!freq) return;
+  $("err").textContent = "";
+  const r = await fetch("/api/stations", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ freq, name: $("name-input").value }),
+  });
+  if (r.status === 401) { location.href = "/login"; return; }
+  const data = await r.json();
+  if (!r.ok) { $("err").textContent = _tm(data.error); return; }
+  stations = data;
+  $("name-input").blur();
+  renderStations();
+  $("err").innerHTML = `<span class="ok">${_t("Nombre guardado")}</span>`;
+  setTimeout(() => { if ($("err").querySelector(".ok")) $("err").textContent = ""; }, 2500);
+}
+$("save-name").onclick = saveName;
+$("name-input").onkeydown = e => { if (e.key === "Enter") saveName(); };
+
+// ---- registro de oyentes
+function device(ua) {
+  const os = /iPhone|iPad|iPod/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows"
+           : /Mac OS X|Macintosh/.test(ua) ? "macOS" : /CrOS/.test(ua) ? "ChromeOS" : /Linux/.test(ua) ? "Linux" : "";
+  const br = /Edg\//.test(ua) ? "Edge" : /OPR\/|Opera/.test(ua) ? "Opera" : /SamsungBrowser/.test(ua) ? "Samsung"
+           : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari"
+           : /VLC/i.test(ua) ? "VLC" : (ua.split(/[\/ ]/)[0] || _t("Desconocido"));
+  return os ? `${br} · ${os}` : br;
+}
+const pad = n => String(n).padStart(2, "0");
+function fmtDate(t) {
+  const d = new Date(t * 1000), today = new Date();
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return d.toDateString() === today.toDateString() ? _t("Hoy {t}", { t: hm }) : `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()} ${hm}`;
+}
+function fmtDur(s) {
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h ? `${h} h ${pad(m)} min` : m ? `${m} min ${pad(s % 60)} s` : `${s} s`;
+}
+const fmtBytes = b => b >= 1e9 ? (b / 1e9).toFixed(2) + " GB" : b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " kB";
+
+let logData = null;
+function renderLog() {
+  if (!logData) return;
+  const onlyOnline = $("log-online").checked;
+  const rows = logData.sessions.filter(x => !onlyOnline || x.online);
+  $("log-sum").innerHTML = _t("<b>{n}</b> en línea · {ips} IP distintas en 24 h", { n: logData.online, ips: logData.unique_ips_24h });
+  $("log-empty").hidden = rows.length > 0;
+  $("log-rows").innerHTML = rows.map(x => {
+    const end = x.online ? logData.now : x.ended;
+    return `<tr class="${x.online ? "on" : "off"}">` +
+      `<td title="${_t(x.online ? "En línea" : "Desconectado")}"><span class="dot ${x.online ? "on" : ""}"></span></td>` +
+      `<td title="${x.online ? "" : _t("Fin: {d}", { d: fmtDate(x.ended) })}">${fmtDate(x.started)}</td>` +
+      `<td>${fmtDur(end - x.started)}</td>` +
+      `<td class="mono"><a href="https://ipinfo.io/${encodeURIComponent(x.ip)}" target="_blank" rel="noopener" title="${_t("Ver ubicación aproximada")}">${esc(x.ip)}</a>` +
+      `${x.admin ? '<span class="tag">admin</span>' : ""}</td>` +
+      `<td title="${esc(x.name || "")}">${x.freq}</td>` +
+      `<td title="${esc(x.ua)}">${esc(device(x.ua))}` +
+      (x.origin ? `<span class="tag" title="${_t("Escuchando desde el reproductor insertado en {s}", { s: esc(x.origin) })}">${_t("vía {s}", { s: esc(x.origin) })}</span>` : "") + `</td>` +
+      `<td>${fmtBytes(x.bytes)}</td></tr>`;
+  }).join("");
+}
+async function pollLog() {
+  try {
+    const r = await fetch("/api/listeners", { cache: "no-store" });
+    if (r.status === 401) { location.href = "/login"; return; }
+    logData = await r.json();
+    renderLog();
+  } catch { /* servidor reiniciando */ }
+}
+$("log-online").onchange = renderLog;
+pollLog();
+setInterval(pollLog, 10000);
+
+fetch("/api/stations").then(r => r.json()).then(list => { stations = list; renderStations(); });
+
+setPlayIcon();
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>

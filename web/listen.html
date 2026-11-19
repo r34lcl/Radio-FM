@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio FM</title>
+<script src="/i18n.js"></script>
+<script>
+// /embed: el mismo reproductor para insertar en otras páginas (iframe).
+//   ?f=98.1     emisora fija (sin lista)    ?lista=0   sin lista de emisoras
+//   ?tema=claro colores claros
+const EMBED = location.pathname === "/embed";
+const PARAMS = new URLSearchParams(location.search);
+if (EMBED) document.documentElement.classList.add("embed");
+if (PARAMS.get("tema") === "claro") document.documentElement.classList.add("light");
+</script>
+<style>
+  :root {
+    --bg: #111418; --panel: #1b2027; --line: #2c333d; --text: #e8ecf1; --muted: #8b95a3;
+    --accent: #f2a33a; --ok: #4cc38a; --warn: #e5c547; --bad: #e5664d;
+    --panel2: #171b21; --hover: #20262e; --sel: #2e2a22; --img: #232a33;
+  }
+  :root.light {
+    --bg: #f4f5f7; --panel: #ffffff; --line: #dde1e6; --text: #1b2027; --muted: #5f6b7a;
+    --accent: #e8901c; --panel2: #f7f8fa; --hover: #f1f3f5; --sel: #fdf3e4; --img: #e6e9ed;
+  }
+  /* Insertado: sin márgenes ni fondo, el reproductor ocupa el ancho del iframe */
+  .embed body { min-height: 0; background: transparent; }
+  .embed main { max-width: none; padding: 0; }
+  .embed .topbar, .embed footer.site { display: none; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  main { width: 100%; max-width: 760px; margin: 0 auto; padding: 16px 16px 24px; }
+  /* Barra superior: acceso al admin a la derecha, alineado con el reproductor */
+  .topbar { display: flex; justify-content: flex-end; align-items: center; margin-bottom: max(40px, 7vh); }
+  .login { color: var(--muted); font-size: 13px; text-decoration: none; padding: 6px 11px; border-radius: 8px; transition: color .15s, background-color .15s; }
+  .login:hover { color: var(--text); background: var(--panel); }
+  .login:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .login:hover { color: var(--text); }
+
+  .player { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .top { display: flex; align-items: center; gap: 24px; padding: 28px; }
+  .play {
+    width: 88px; height: 88px; flex: none; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--accent); color: #111; display: grid; place-items: center;
+    transition: transform .1s;
+  }
+  .play:active { transform: scale(.96); }
+  .play svg { width: 36px; height: 36px; }
+  .info { min-width: 0; flex: 1; }
+  .name { font-size: 30px; font-weight: 650; line-height: 1.15; overflow-wrap: anywhere; }
+  .freq { font: 600 18px/1.2 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--muted); margin-top: 4px; }
+  /* Sin nombre: la frecuencia pasa a ser el título */
+  .info.no-name .name { display: none; }
+  .info.no-name .freq { font-size: 44px; color: var(--text); margin: 0; letter-spacing: -1px; }
+  .song { display: flex; gap: 12px; align-items: center; margin-top: 12px; min-width: 0; color: var(--text); text-decoration: none; }
+  .song[hidden] { display: none; }
+  .song img { width: 44px; height: 44px; flex: none; border-radius: 6px; object-fit: cover; background: var(--img); }
+  .song img[src=""] { display: none; }
+  .song-text { min-width: 0; }
+  .song-text b, .song-text span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .song-text b { font-weight: 600; font-size: 15px; }
+  .song-text span { color: var(--muted); font-size: 13px; }
+  .song:hover b { color: var(--accent); }
+  .status { margin-top: 10px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.busy { background: var(--warn); animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .badge { border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-size: 12px; }
+  .eq { display: none; gap: 2px; align-items: flex-end; height: 14px; margin-left: 4px; }
+  .eq i { width: 3px; background: var(--accent); border-radius: 1px; animation: eq .9s ease-in-out infinite; }
+  .eq i:nth-child(2) { animation-delay: -.3s; } .eq i:nth-child(3) { animation-delay: -.6s; } .eq i:nth-child(4) { animation-delay: -.45s; }
+  @keyframes eq { 0%, 100% { height: 3px; } 50% { height: 14px; } }
+  .playing .eq { display: inline-flex; }
+
+  .volume { display: flex; align-items: center; gap: 14px; padding: 16px 28px; border-top: 1px solid var(--line); background: var(--panel2); }
+  .mute { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px; display: grid; place-items: center; }
+  .mute:hover { color: var(--text); }
+  .mute svg { width: 22px; height: 22px; }
+  input[type=range] { flex: 1; accent-color: var(--accent); height: 24px; cursor: pointer; }
+  .pct { width: 3.2em; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .ios-note { flex: 1; color: var(--muted); font-size: 13px; }
+
+  .list { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .list[hidden] { display: none; }
+  .list h2 { margin: 0; padding: 14px 28px 10px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .st {
+    display: flex; align-items: center; gap: 16px; width: 100%; padding: 12px 28px; border: 0; border-top: 1px solid var(--line);
+    background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  }
+  .st:hover { background: var(--hover); }
+  .st.sel { background: var(--sel); box-shadow: inset 3px 0 0 var(--accent); }
+  .st .f { font: 600 16px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; width: 3.6em; flex: none; color: var(--muted); }
+  .st.sel .f { color: var(--accent); }
+  .st .t { min-width: 0; flex: 1; }
+  .st .t b, .st .t span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st .t b { font-weight: 600; }
+  .st .t span { color: var(--muted); font-size: 13px; }
+  .st .n { color: var(--muted); font-size: 12px; flex: none; }
+
+  @media (max-width: 520px) {
+    .top { padding: 22px 18px; gap: 18px; }
+    .play { width: 72px; height: 72px; }
+    .play svg { width: 30px; height: 30px; }
+    .name { font-size: 22px; }
+    .info.no-name .freq { font-size: 34px; }
+    .volume { padding: 14px 18px; }
+    .list h2 { padding: 12px 18px 8px; }
+    .st { padding: 12px 18px; gap: 12px; }
+  }
+  footer.site { margin-top: auto; padding: 8px 16px 16px; text-align: center; font-size: 12.5px; color: var(--muted); }
+  footer.site a { color: inherit; text-decoration: none; font-weight: 600; }
+  footer.site a:hover { color: var(--text); text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <header class="topbar"><a class="login" href="/admin" data-t>Login</a></header>
+  <section class="player" id="player">
+    <div class="top">
+      <button class="play" id="play" aria-label="Reproducir"></button>
+      <div class="info no-name" id="info">
+        <div class="name" id="name"></div>
+        <div class="freq"><span id="freq">--.-</span> MHz</div>
+        <a class="song" id="song" target="_blank" rel="noopener" title="Ver en Shazam" hidden>
+          <img id="cover" src="" alt="">
+          <span class="song-text"><b id="song-title"></b><span id="song-artist"></span></span>
+        </a>
+        <div class="status">
+          <span class="dot" id="dot"></span><span id="state" data-t>Conectando…</span>
+          <span class="badge" id="mode" hidden></span>
+          <span class="badge" id="listeners" hidden></span>
+          <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="volume" id="volume-row">
+      <button class="mute" id="mute" aria-label="Silenciar"></button>
+      <input type="range" id="volume" min="0" max="1" step="0.01" aria-label="Volumen">
+      <span class="pct" id="pct"></span>
+    </div>
+    <audio id="audio" preload="none"></audio>
+  </section>
+  <section class="list" id="list" hidden>
+    <h2 data-t>Emisoras en vivo</h2>
+    <div id="stations"></div>
+  </section>
+</main>
+<footer class="site">Radio FM v__VERSION__ · <a href="https://kqk.cl" target="_blank" rel="noopener">KqK.cl</a></footer>
+
+<script>
+const $ = id => document.getElementById(id);
+tStatic();
+const audio = $("audio");
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>';
+const ICON_VOL = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>';
+const ICON_MUTE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.6 3 2.7-2.7-1.4-1.4-2.7 2.7-2.7-2.7-1.4 1.4 2.7 2.7-2.7 2.7 1.4 1.4 2.7-2.7 2.7 2.7 1.4-1.4z"/></svg>';
+
+let wantPlay = false;
+let lastStart = null;   // stream_start de Icecast: cambia cuando se re-sintoniza
+let retryTimer = null;
+let current = {};      // emisora elegida (de /api/status → stations)
+let status = null;     // último /api/status
+// localStorage puede no estar disponible (iframe de terceros, modo privado)
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const FIXED = EMBED ? PARAMS.get("f") : null;      // emisora fija del código insertado
+const NO_LIST = EMBED && (FIXED || PARAMS.get("lista") === "0");
+// Sitio que insertó el reproductor, para el registro de oyentes del admin
+let SRC = "";
+if (EMBED) { try { SRC = new URL(document.referrer).host; } catch {} SRC = SRC || "embed"; }
+let selected = FIXED || store.get("station");   // frecuencia elegida por el oyente
+
+// ---- volumen
+// iOS no deja cambiar el volumen desde la web (audio.volume es de solo lectura).
+audio.volume = 0.5;
+const volumeWorks = audio.volume === 0.5;
+if (!volumeWorks) {
+  $("volume").remove(); $("pct").remove(); $("mute").remove();
+  $("volume-row").insertAdjacentHTML("beforeend",
+    `<span class="ios-note">${_t("🔊 Usa los botones de volumen de tu dispositivo")}</span>`);
+} else {
+  const saved = parseFloat(store.get("vol"));
+  setVolume(Number.isFinite(saved) ? saved : 0.8);
+  audio.muted = store.get("muted") === "1";
+  $("volume").oninput = e => { audio.muted = false; setVolume(+e.target.value); };
+  $("mute").onclick = () => { audio.muted = !audio.muted; store.set("muted", audio.muted ? "1" : "0"); renderVolume(); };
+  renderVolume();
+}
+function setVolume(v) {
+  audio.volume = v;
+  store.set("vol", v);
+  store.set("muted", "0");
+  renderVolume();
+}
+function renderVolume() {
+  const v = audio.muted ? 0 : audio.volume;
+  $("volume").value = v;
+  $("pct").textContent = Math.round(v * 100) + "%";
+  $("mute").innerHTML = v === 0 ? ICON_MUTE : ICON_VOL;
+  $("mute").setAttribute("aria-label", _t(audio.muted ? "Activar sonido" : "Silenciar"));
+}
+
+// ---- reproducción
+function setPlaying() {
+  $("play").innerHTML = wantPlay ? ICON_STOP : ICON_PLAY;
+  $("play").setAttribute("aria-label", _t(wantPlay ? "Detener" : "Reproducir"));
+  $("player").classList.toggle("playing", wantPlay && !audio.paused);
+}
+function startAudio() {
+  clearTimeout(retryTimer);
+  audio.src = `/stream?f=${encodeURIComponent(current.freq || "")}` +
+    (SRC ? `&src=${encodeURIComponent(SRC)}` : "") + `&t=${Date.now()}`;
+  audio.play().catch(() => {});
+}
+function stopAudio() {
+  clearTimeout(retryTimer);
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+}
+$("play").onclick = () => {
+  wantPlay = !wantPlay;
+  wantPlay ? startAudio() : stopAudio();
+  setPlaying();
+};
+for (const ev of ["playing", "pause", "waiting"]) audio.addEventListener(ev, setPlaying);
+// Si el stream se corta (cambio de emisora, reinicio), reconectar mientras se quiera escuchar.
+for (const ev of ["error", "ended"]) {
+  audio.addEventListener(ev, () => {
+    setPlaying();
+    if (wantPlay) { clearTimeout(retryTimer); retryTimer = setTimeout(startAudio, 3000); }
+  });
+}
+
+// Controles del sistema (pantalla de bloqueo, auriculares)
+function updateMediaSession() {
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: current.song ? current.song.title : (current.name || `FM ${current.freq} MHz`),
+    artist: current.song ? current.song.artist : (current.name ? `FM ${current.freq} MHz` : _t("Radio FM")),
+    artwork: current.song && current.song.cover ? [{ src: current.song.cover, sizes: "400x400" }] : [],
+  });
+  navigator.mediaSession.setActionHandler("play", () => { if (!wantPlay) $("play").click(); });
+  navigator.mediaSession.setActionHandler("pause", () => { if (wantPlay) $("play").click(); });
+  navigator.mediaSession.setActionHandler("stop", () => { if (wantPlay) $("play").click(); });
+}
+
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---- lista de emisoras (solo si se transmite más de una)
+function renderList() {
+  const list = status.stations;
+  const show = list.length >= 2 && !NO_LIST;
+  $("list").hidden = !show;
+  const html = !show ? "" : list.map(x =>
+    `<button class="st${x.freq === current.freq ? " sel" : ""}" data-freq="${x.freq}">` +
+    `<span class="f">${x.freq}</span><span class="t"><b>${esc(x.name || `FM ${x.freq} MHz`)}</b>` +
+    (x.song ? `<span>♪ ${esc(x.song.artist)} – ${esc(x.song.title)}</span>` : "") + `</span>` +
+    `<span class="n">${x.on_air ? _plural(x.listeners, "{n} oyente", "{n} oyentes") : _t("sin señal")}</span></button>`
+  ).join("");
+  if ($("stations").dataset.html === html) return;
+  $("stations").innerHTML = $("stations").dataset.html = html;
+  $("stations").querySelectorAll(".st").forEach(b => b.onclick = () => {
+    if (b.dataset.freq === current.freq) return;
+    selected = b.dataset.freq;
+    store.set("station", selected);
+    render();
+    if (wantPlay) startAudio();
+  });
+}
+
+// ---- estado
+function render() {
+  const s = status.stations.find(x => x.freq === selected) || status.stations[0];
+  const songKey = x => x && x.song ? x.song.artist + "|" + x.song.title : "";
+  const changed = s.freq !== current.freq || s.name !== current.name || songKey(s) !== songKey(current);
+  const switched = current.freq && s.freq !== current.freq;
+  current = s;
+  // si la elegida salió del aire, quedarse en la principal (la fija del código insertado se espera)
+  if (!FIXED) selected = s.freq;
+  renderList();
+  $("freq").textContent = s.freq;
+  $("name").textContent = s.name || "";
+  $("info").classList.toggle("no-name", !s.name);
+  document.title = (s.name ? s.name + " · " : "") + s.freq + " MHz";
+  $("song").hidden = !s.song;
+  if (s.song) {
+    $("song-title").textContent = s.song.title;
+    $("song-artist").textContent = s.song.artist;
+    if ($("cover").getAttribute("src") !== s.song.cover) $("cover").setAttribute("src", s.song.cover || "");
+    if (s.song.url) $("song").href = s.song.url; else $("song").removeAttribute("href");
+  }
+  $("mode").hidden = false;
+  $("mode").textContent = _t(status.stereo ? "Estéreo" : "Mono");
+  $("listeners").hidden = !s.on_air;
+  $("listeners").textContent = _plural(s.listeners, "{n} oyente", "{n} oyentes");
+  if (s.on_air) { $("dot").className = "dot on"; $("state").textContent = _t("En vivo"); }
+  else { $("dot").className = "dot busy"; $("state").textContent = _t(status.scanning ? "En mantención, vuelve en un minuto…" : "Cambiando de emisora…"); }
+  if (changed) updateMediaSession();
+  if (switched) lastStart = null;
+  // Nueva fuente en Icecast: reconectar para no quedar con el stream anterior colgado.
+  if (s.on_air && lastStart && s.stream_start !== lastStart && wantPlay) startAudio();
+  if (s.on_air) lastStart = s.stream_start;
+}
+
+async function poll() {
+  try {
+    status = await (await fetch("/api/status", { cache: "no-store" })).json();
+  } catch { return; /* servidor reiniciando */ }
+  const prev = current.freq;
+  render();
+  // La emisora que se escuchaba salió del aire (el admin cambió la sintonía): pasar a la principal
+  if (wantPlay && prev && current.freq !== prev) startAudio();
+}
+
+// Insertado: avisar la altura a la página contenedora (el código del admin ajusta el iframe)
+if (EMBED && window.parent !== window && "ResizeObserver" in window) {
+  let lastH = 0;
+  new ResizeObserver(() => {
+    const h = Math.ceil(document.querySelector("main").getBoundingClientRect().height);
+    if (h && h !== lastH) { lastH = h; window.parent.postMessage({ radioHeight: h }, "*"); }
+  }).observe(document.querySelector("main"));
+}
+
+setPlaying();
+poll();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>

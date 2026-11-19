@@ -1,0 +1,7 @@
+# configuración local y datos (contienen contraseñas, nombres de emisoras e IPs de oyentes)
+.env
+state/
+# generados
+__pycache__/
+*.pyc
+*.tar.gz
